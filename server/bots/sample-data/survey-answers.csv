@@ -1,0 +1,5 @@
+Question,Keywords,Answers,Type
+"What is your gender?","male,female","Female",
+"How often do you shop online?","shopping,frequency","A few times a month|Whenever I need something",
+"Which of the following brands have you purchased?","brands,purchase","Brand A|Brand C|Brand D","checkbox"
+"In a sentence, describe your last shopping experience.","shopping experience","I recently ordered a pair of headphones online and they arrived quickly.","textarea"
