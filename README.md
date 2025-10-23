@@ -2,7 +2,7 @@
 
 ## Survey Junkie automation bot
 
-This repository now includes a headless browser bot that can automatically log into [Survey Junkie](https://app.surveyjunkie.com/) and attempt to complete an available survey. The automation is implemented with [Puppeteer](https://pptr.dev/) and lives in [`server/bots/surveyJunkieBot.tsx`](server/bots/surveyJunkieBot.tsx).
+This repository now includes a headless browser bot that can automatically log into [Survey Junkie](https://app.surveyjunkie.com/) and attempt to complete an available survey. The automation is implemented with [Puppeteer](https://pptr.dev/) and lives in [`server/bots/surveyJunkieBot.ts`](server/bots/surveyJunkieBot.ts).
 
 ### Prerequisites
 
@@ -24,30 +24,12 @@ SURVEYJUNKIE_PASSWORD="hunter2" \
 npm run surveyjunkie:bot -- --max-steps=25
 ```
 
-Alternatively you can place your credentials and other options inside a `.env` file. A ready-made template lives at [`.env.example`](.env.example); copy it to `.env`, adjust the values, and they will be picked up automatically by the script (when using tools such as `dotenv-cli` or `direnv`). Supported keys include:
-
-| Variable | Purpose |
-| -------- | ------- |
-| `SURVEYJUNKIE_EMAIL` / `SURVEYJUNKIE_PASSWORD` | Required login credentials. |
-| `SURVEYJUNKIE_SURVEY_URL` | Optional deep link to a specific survey. |
-| `SURVEYJUNKIE_MAX_STEPS` | Override the maximum number of survey pages to traverse. |
-| `SURVEYJUNKIE_IDLE_TIMEOUT_MS` | Custom network idle timeout between survey actions. |
-| `SURVEYJUNKIE_ANSWER_WORKBOOK` | Path to the Excel workbook containing reusable answers. |
-| `SURVEYJUNKIE_HEADLESS` | Set to `false` to observe the browser while debugging. |
-| `SURVEYJUNKIE_USE_GPT_LONG_FORM` | Enable GPT long-form textarea responses. |
-| `OPENAI_API_KEY` / `SURVEYJUNKIE_GPT_MODEL` / `SURVEYJUNKIE_GPT_PROMPT` | Configure the GPT integration when enabled. |
-
 Key CLI options:
 
 - `--survey=<url>` – optional direct link to a specific Survey Junkie survey.
 - `--headless=false` – run the browser with a visible window for debugging.
 - `--max-steps=<number>` – cap the number of survey pages the bot will attempt.
 - `--idle-timeout=<milliseconds>` – override the network idle timeout used between steps.
-- `--answers=<path>` – optional path to an Excel workbook containing reusable answers.
-- `--gpt-long-form=true` – enable GPT powered long-form textarea responses (requires `OPENAI_API_KEY`).
-- `--openai-api-key=<key>` – override the OpenAI key for the long-form agent just for this run.
-- `--gpt-model=<model>` – override the default OpenAI model used for long-form answers.
-- `--gpt-prompt=<prompt>` – supply a custom system prompt for the GPT long-form agent.
 
 > **Important:** Automated survey completion may violate Survey Junkie's terms of service. Use this tool responsibly and only on accounts you own.
 
@@ -55,72 +37,10 @@ Key CLI options:
 
 The bot performs the following high-level flow:
 
-1. Launches a Puppeteer-controlled Chromium instance (headless by default) hardened with `puppeteer-extra`'s stealth plugin.
-2. Randomises the browser fingerprint (user agent, viewport, timezone, and locale) and drives the cursor along smooth, physical mouse paths (with overshoots and drifts) before every interaction to avoid "teleporting" clicks.
-3. Logs into the Survey Junkie dashboard using the supplied credentials.
-4. Starts the first available survey (or the survey URL you provide).
-5. Iteratively selects answers for radio buttons, checkboxes, selects, and text inputs using lightweight heuristics or configured workbook values, while prioritising any detected attention-check instructions.
-6. Waits with human-like pauses between actions and advances until completion text is detected or the maximum step count is reached.
+1. Launches a Puppeteer-controlled Chromium instance (headless by default).
+2. Logs into the Survey Junkie dashboard using the supplied credentials.
+3. Starts the first available survey (or the survey URL you provide).
+4. Iteratively selects answers for radio buttons, checkboxes, selects, and text inputs using lightweight heuristics.
+5. Attempts to progress through survey pages until completion text is detected or the maximum step count is reached.
 
-To keep the session looking natural, only streaming media requests are blocked; images, fonts, and other assets continue loading as they would in a normal browser.
-
-### Providing consistent answers
-
-You can instruct the automation to reuse specific responses by supplying an Excel workbook via the `--answers` flag. The bot reads the first worksheet and expects the following columns:
-
-| Column | Purpose |
-| ------ | ------- |
-| `Question` | Text that roughly matches the survey prompt. |
-| `Keywords` | Optional comma-separated fallback keywords used when the question text does not match exactly. |
-| `Answers` | One or more pipe-separated answer values (e.g. `Female` or `Red|Blue`). |
-
-When the bot encounters an input whose prompt matches a `Question` (or contains one of the `Keywords`), it will try to apply the corresponding `Answers` to radios, checkboxes, selects, inputs, and textareas before falling back to heuristic behaviour. This allows you to keep answers consistent across runs without editing the code.
-
-A text-based sample dataset is available at [`server/bots/sample-data/survey-answers.csv`](server/bots/sample-data/survey-answers.csv). Open it in Excel (or Google Sheets) and export it as an `.xlsx` workbook before pointing the bot at the file, since binary spreadsheets are not stored in this repository.
-
-### Attention checks and trap questions
-
-Survey Junkie (and third-party survey platforms) occasionally insert "attention check" prompts that ask respondents to pick a specific option or type a particular word. The bot analyses each prompt for this language and, when detected, will:
-
-- Select the requested radio/checkbox/select option by matching the quoted text, colour name, or explicit option number.
-- Prefer any options containing attention-focused keywords (e.g. "I am paying attention" or "I read the instructions") when quality-check text is present.
-- Type mandatory phrases or numbers into text inputs and long-form textareas when instructed (for example "enter 123" or "type the word blue").
-
-These safeguards run before answer-bank lookups so workbook preferences continue to work without overriding attention checks.
-
-### Packaging a standalone executable
-
-If you need a Windows-friendly executable you can bundle the automation with [`pkg`](https://github.com/vercel/pkg). The repository includes an npm script that compiles the TypeScript entrypoint and wraps it in a Node.js runtime:
-
-```bash
-npm run surveyjunkie:package
-```
-
-The command emits two artefacts inside `dist/`:
-
-- `surveyjunkie-bot.mjs` – the bundled ES module used by the packager.
-- `surveyjunkie-bot.exe` – a self-contained Windows executable targeting Node.js 18.
-
-The executable still downloads (or reuses) the Chromium bundle shipped with Puppeteer on first run, so the initial execution may take a little longer while the browser assets are prepared. `pkg` may warn that Puppeteer's `.local-chromium` directory cannot be embedded; this is expected and simply means you'll need to let Puppeteer download its browser payload on the target machine (or ship that directory alongside the executable).
-
-### GPT generated long-form answers
-
-Textareas that look like open-ended questions (for example those with 3+ rows, explicit minimum character requirements, or lengthy prompts) can be filled with a GPT agent instead of the default canned response. To enable it:
-
-1. Export your OpenAI key in the environment (or pass `--openai-api-key` on the CLI):
-   ```bash
-   export OPENAI_API_KEY="sk-your-key"
-   ```
-2. Run the bot with the long-form flag:
-   ```bash
-   npm run surveyjunkie:bot -- --gpt-long-form=true --max-steps=25
-   ```
-
-Optional flags let you swap the target model (`--gpt-model=gpt-4.1-mini`) or override the base system prompt (`--gpt-prompt="..."`).
-The default system prompt baked into the bot is listed below so you can reuse or tweak it inside your own GPT agent tooling:
-
-```
-You are helping complete market research surveys. Provide sincere, first-person answers that sound natural and specific.
-```
-
-The automation sends the detected survey question along with this prompt and asks for a concise, 3–5 sentence reply. If the GPT request fails for any reason the script falls back to the textarea placeholder (or a generic message) so that the field is never left blank.
+All network-heavy assets such as images and fonts are blocked to keep the automation lightweight.
